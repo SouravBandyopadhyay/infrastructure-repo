@@ -1,0 +1,62 @@
+stages:
+  - build
+  - push
+  - deploy
+  - deploy_infrastructure
+
+# Define variables
+variables:
+  DOCKER_IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+
+# Build the Docker image
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_DRIVER: overlay2
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $DOCKER_IMAGE .
+    - docker push $DOCKER_IMAGE
+  only:
+    - main  # Trigger only on main branch
+
+# Push the Docker image with the latest tag
+push:
+  stage: push
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_DRIVER: overlay2
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker pull $DOCKER_IMAGE
+    - docker tag $DOCKER_IMAGE $CI_REGISTRY_IMAGE:latest
+    - docker push $CI_REGISTRY_IMAGE:latest
+  only:
+    - main  # Trigger only on main branch
+
+# Deploy infrastructure for Tenant 1
+deploy_infrastructure_tenant1:
+  stage: deploy_infrastructure
+  image: hashicorp/terraform:latest
+  script:
+    - cd infrastructure-repo/tenant1/terraform
+    - terraform init
+    - terraform apply -auto-approve
+  only:
+    - main
+
+# Deploy infrastructure for Tenant 2
+deploy_infrastructure_tenant2:
+  stage: deploy_infrastructure
+  image: hashicorp/terraform:latest
+  script:
+    - cd infrastructure-repo/tenant2/terraform
+    - terraform init
+    - terraform apply -auto-approve
+  only:
+    - main
