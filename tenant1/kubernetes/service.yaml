@@ -1,0 +1,14 @@
+# For accessing the deployment in k8s
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant1-service
+spec:
+  selector:
+    app: nextjs-portfolio-tenant1
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+  type: NodePort # Use LoadBalancer if you plan to expose the service externally in a cloud environment
