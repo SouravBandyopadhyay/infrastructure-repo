@@ -1,46 +1,105 @@
+# SECTION Variables
+variable "region" {
+  description = "AWS region to be used"
+  type        = string
+  default     = "ap-south-1"
+}
+
+variable "app_name" {
+  description = "Application name for tenant"
+  type        = string
+  default     = "tenant1"
+}
+
+variable "image" {
+  description = "Docker image to deploy"
+  type        = string
+  default     = "sourav2805/nextjs-portfolio:tenant1"
+}
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "5.78.0"
+    }
+  }
+}
+
+# SECTION Providers
 provider "aws" {
-  region = "us-west-2"
+  region = var.region
 }
 
-# Create S3 Bucket for tenant1
-resource "aws_s3_bucket" "tenant1_bucket" {
-  bucket = "tenant1-portfolio-bucket"
-  acl    = "public-read"
+
+
+module "vpc" {
+  source = "terraform-aws-modules/vpc/aws"
+
+  name = "my-demo-vpc"
+  cidr = "10.10.0.0/16"
+
+  azs             = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
+  private_subnets = ["10.10.1.0/24", "10.10.2.0/24", "10.10.3.0/24"]
+  public_subnets  = ["10.10.101.0/24", "10.10.102.0/24", "10.10.103.0/24"]
+
+  enable_nat_gateway = true
+  enable_vpn_gateway = true
+
+  tags = {
+    Terraform   = "true"
+    Environment = "dev"
+  }
 }
 
-# Create CloudFront Distribution for tenant1
-resource "aws_cloudfront_distribution" "tenant1_distribution" {
-  origin {
-    domain_name = aws_s3_bucket.tenant1_bucket.bucket_regional_domain_name
-    origin_id   = "S3-tenant1-origin"
 
-    s3_origin_config {
-      origin_access_identity = "origin-access-identity/cloudfront/EXAMPLE"
+
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "20.30.1"
+
+  cluster_name    = "my-cluster"
+  cluster_version = "1.29"
+
+  cluster_endpoint_public_access = true
+
+  cluster_addons = {
+    coredns = {
+      most_recent = true
+    }
+    kube-proxy = {
+      most_recent = true
+    }
+    vpc-cni = {
+      most_recent = true
     }
   }
 
-  enabled             = true
-  is_ipv6_enabled     = true
-  comment             = "CloudFront distribution for tenant1 portfolio"
-  default_root_object = "index.html"
+  vpc_id = module.vpc.vpc_id
 
-  default_cache_behavior {
-    target_origin_id = "S3-tenant1-origin"
-    viewer_protocol_policy = "redirect-to-https"
+  control_plane_subnet_ids = module.vpc.public_subnets
 
-    allowed_methods {
-      cached_methods = ["GET", "HEAD"]
-      methods        = ["GET", "HEAD"]
+  subnet_ids = module.vpc.private_subnets
+  # EKS Managed Node Group(s)
+  eks_managed_node_group_defaults = {
+    instance_types = ["t3.large"]
+  }
+
+  eks_managed_node_groups = {
+    example = {
+      min_size     = 1
+      max_size     = 10
+      desired_size = 1
+
+      instance_types = ["t3.large"]
     }
   }
 
-  price_class = "PriceClass_100"
-
-  viewer_certificate {
-    cloudfront_default_certificate = true
+  # Cluster access entry
+  # To add the current caller identity as an administrator
+  enable_cluster_creator_admin_permissions = true
+  tags = {
+    Environment = "dev"
+    Terraform   = "true"
   }
-}
-
-output "tenant1_cloudfront_url" {
-  value = aws_cloudfront_distribution.tenant1_distribution.domain_name
 }
